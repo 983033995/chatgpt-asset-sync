@@ -4,6 +4,39 @@
 
 > 当前版本：**v0.4.0**。已经具备可配置目标仓库、单资产同步、Library 批量迁移、Migration Runner、SHA256 幂等去重，以及首次初始化同步状态机。最终“Web / Desktop / Mobile 任意原生图片生成后 100% 无感触发”仍取决于 ChatGPT 宿主开放生成附件事件/文件传输能力。
 
+## Codex 继续开发
+
+本项目已经完成首次历史迁移，后续开发主线是 Remote MCP、Postgres、GitHub App、Apps SDK 和增量同步。
+
+在 Codex 中继续前，优先阅读：
+
+```text
+AGENTS.md
+        ↓
+docs/CODEX_HANDOFF.md
+        ↓
+docs/ARCHITECTURE.md
+        ↓
+docs/ROADMAP.md
+        ↓
+docs/HOST_BRIDGE.md
+```
+
+其中：
+
+- `AGENTS.md`：Codex 的项目约束、不可破坏规则、安全要求和完成定义。
+- `docs/CODEX_HANDOFF.md`：v0.5 → v1.0 完整实现方案、数据库设计、GitHub App、Remote MCP、Apps SDK、增量同步、安全加固、验收标准，以及可直接复制给 Codex 的第一条 Sprint 指令。
+- `docs/ROADMAP.md`：当前真实完成状态和后续版本 checklist。
+
+当前首次历史资产已经完成，不要重复导入：
+
+```text
+repository: 983033995/openmontage-assets
+assetCount: 88
+importCommitSha: 83ddbe0fec1fc3deedf10375765a0abd5fc2014b
+lastLibraryCreatedAt: 2026-08-10T02:07:59.594373Z
+```
+
 ## 目标体验
 
 用户只需要说：
@@ -123,7 +156,7 @@ Migration Runner 会：
 
 ## 初始化状态
 
-服务端将状态保存在：
+开发版服务端将状态保存在：
 
 ```text
 ./data/initial-sync.json
@@ -134,6 +167,8 @@ Migration Runner 会：
 ```bash
 INITIAL_SYNC_STORE_PATH=./data/initial-sync.json
 ```
+
+生产版计划迁移到 Postgres，详见 `docs/CODEX_HANDOFF.md`。
 
 完成后的状态示例：
 
@@ -209,7 +244,7 @@ GET http://localhost:8787/health
 GITHUB_TOKEN=...
 ```
 
-生产版计划切换 GitHub App / OAuth，并按 ChatGPT 用户隔离目标仓库配置。
+生产版计划切换 GitHub App / installation token，并按认证用户隔离目标仓库配置。
 
 ## 当前平台边界
 
