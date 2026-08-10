@@ -41,6 +41,7 @@ type TreeEntry = {
   sha: string;
 };
 
+async function main() {
 const args = parseArgs(process.argv.slice(2));
 const bundlePath = args.positionals[0];
 if (!bundlePath) {
@@ -142,6 +143,7 @@ try {
   console.log(`Commit: https://github.com/${normalizedRepo}/commit/${commitSha}`);
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
+}
 }
 
 function prepareBundle(bundlePath: string, tempDir: string): string {
@@ -340,3 +342,8 @@ function fail(message: string): never {
   console.error(message);
   process.exit(1);
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

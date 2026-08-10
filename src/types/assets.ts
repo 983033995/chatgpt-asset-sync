@@ -2,6 +2,7 @@ export interface AssetRepositoryConfig {
   repository: string;
   branch: string;
   basePath: string;
+  [key: string]: unknown;
 }
 
 export type AssetSourceSurface = "library" | "conversation" | "api" | "upload";
@@ -35,6 +36,7 @@ export interface AssetSyncResult {
   metadataPath: string;
   sha256: string;
   reason?: string;
+  [key: string]: unknown;
 }
 
 export interface LibraryImportBatchResult {
@@ -47,4 +49,5 @@ export interface LibraryImportBatchResult {
     | { sourceFileId?: string; ok: true; result: AssetSyncResult }
     | { sourceFileId?: string; ok: false; error: string }
   >;
+  [key: string]: unknown;
 }
