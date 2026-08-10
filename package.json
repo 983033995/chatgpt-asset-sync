@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-asset-sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "ChatGPT generated asset sync service with configurable GitHub destinations.",
