@@ -5,12 +5,14 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { ConfigStore } from "./config/store.js";
 import { AssetSyncService } from "./services/asset-sync.js";
+import { InitialSyncStore } from "./services/initial-sync-store.js";
 import { resolveProject } from "./services/project-router.js";
 import type { LibraryImportBatchResult } from "./types/assets.js";
 
 const PORT = Number(process.env.PORT || 8787);
-const SERVER_VERSION = "0.2.0";
+const SERVER_VERSION = "0.4.0";
 const configStore = new ConfigStore(process.env.CONFIG_STORE_PATH || "./data/configs.json");
+const initialSyncStore = new InitialSyncStore(process.env.INITIAL_SYNC_STORE_PATH || "./data/initial-sync.json");
 const syncService = new AssetSyncService(configStore);
 
 const assetInputSchema = {
@@ -68,6 +70,88 @@ function createMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "get_initial_sync_status",
+    {
+      title: "Get initial asset sync status",
+      description: "Return whether the ChatGPT Library bootstrap sync is idle, awaiting export, bundle-ready, importing, completed, or failed.",
+      inputSchema: { profileId: z.string().optional() },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ profileId }) => {
+      const state = await initialSyncStore.get(profileId);
+      return { content: [{ type: "text", text: JSON.stringify(state) }], structuredContent: state };
+    },
+  );
+
+  server.registerTool(
+    "begin_initial_sync",
+    {
+      title: "Begin initial ChatGPT Library sync",
+      description: "Start or restart the one-time Library bootstrap workflow. The ChatGPT host should enumerate model-generated Library assets, then register/export a migration bundle or provide batches directly.",
+      inputSchema: {
+        profileId: z.string().optional(),
+        migrationId: z.string().optional(),
+        discoveredAssets: z.number().int().nonnegative().optional(),
+        lastLibraryCreatedAt: z.string().optional(),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async (input) => {
+      const state = await initialSyncStore.begin(input);
+      const result = {
+        ...state,
+        nextAction: "Enumerate Library with model_generated=true. Prefer a host file transfer to the Asset Sync service; otherwise prepare a verified migration bundle.",
+      };
+      return { content: [{ type: "text", text: `Initial sync ${state.migrationId} started.` }], structuredContent: result };
+    },
+  );
+
+  server.registerTool(
+    "register_initial_sync_bundle",
+    {
+      title: "Register initial sync migration bundle",
+      description: "Record a verified migration bundle produced by the ChatGPT host before importing it. This does not itself transfer the bundle bytes.",
+      inputSchema: {
+        profileId: z.string().optional(),
+        filename: z.string().min(1),
+        assetCount: z.number().int().nonnegative(),
+        totalBytes: z.number().int().nonnegative(),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/i),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async ({ profileId, filename, assetCount, totalBytes, sha256 }) => {
+      const state = await initialSyncStore.registerBundle(profileId, {
+        filename,
+        assetCount,
+        totalBytes,
+        sha256: sha256.toLowerCase(),
+        createdAt: new Date().toISOString(),
+      });
+      return { content: [{ type: "text", text: `Migration bundle registered: ${filename}.` }], structuredContent: state };
+    },
+  );
+
+  server.registerTool(
+    "complete_initial_sync",
+    {
+      title: "Complete initial asset sync",
+      description: "Mark the bootstrap sync complete after the destination GitHub commit succeeds. Future runs can use lastLibraryCreatedAt for incremental discovery.",
+      inputSchema: {
+        profileId: z.string().optional(),
+        assetCount: z.number().int().nonnegative(),
+        lastLibraryCreatedAt: z.string().optional(),
+        commitSha: z.string().optional(),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    },
+    async (input) => {
+      const state = await initialSyncStore.complete(input);
+      return { content: [{ type: "text", text: `Initial sync completed with ${input.assetCount} assets.` }], structuredContent: state };
+    },
+  );
+
+  server.registerTool(
     "resolve_project",
     {
       title: "Resolve asset project",
@@ -106,18 +190,20 @@ function createMcpServer(): McpServer {
     "import_library",
     {
       title: "Prepare ChatGPT Library import",
-      description: "Return the v0.2 first-import contract. The host enumerates model-generated Library files and supplies a downloadable URL or bytes to import_library_batch.",
+      description: "Return the bootstrap import contract and current lifecycle state. The host enumerates model-generated Library files and supplies a host file transfer, downloadable URL, or bytes.",
       inputSchema: { profileId: z.string().optional() },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ profileId }) => {
       const config = await configStore.get(profileId);
+      const state = await initialSyncStore.get(profileId);
       const result = {
         ready: true,
         version: SERVER_VERSION,
         repository: config.repository,
         batchSize: 20,
-        requiredHostCapability: "For each Library item provide sourceUrl or dataBase64 plus sourceFileId.",
+        state,
+        requiredHostCapability: "Provide generated Library files using a host file parameter or temporary sourceUrl; dataBase64 is a fallback for small assets.",
         includePolicy: "model_generated=true",
         idempotency: "SHA256 index in .chatgpt-asset-sync/index/",
         fallbackProject: "_unclassified",
@@ -130,7 +216,7 @@ function createMcpServer(): McpServer {
     "import_library_batch",
     {
       title: "Import a ChatGPT Library batch",
-      description: "Import up to 20 model-generated Library assets. Designed for resumable first-time migration and uses the same SHA256 deduplication path as live sync.",
+      description: "Import up to 20 model-generated Library assets. Designed for resumable bootstrap migration and uses the same SHA256 deduplication path as live sync.",
       inputSchema: {
         profileId: z.string().optional(),
         migrationId: z.string().min(1),
@@ -168,10 +254,11 @@ function createMcpServer(): McpServer {
         failed,
         results,
       };
+      const state = await initialSyncStore.recordBatch(profileId, report);
 
       return {
         content: [{ type: "text", text: `Migration ${migrationId}: ${synced} synced, ${duplicates} duplicates, ${failed} failed.` }],
-        structuredContent: report,
+        structuredContent: { ...report, state },
       };
     },
   );
