@@ -4,6 +4,8 @@ export interface AssetRepositoryConfig {
   basePath: string;
 }
 
+export type AssetSourceSurface = "library" | "conversation" | "api" | "upload";
+
 export interface AssetSyncInput {
   profileId?: string;
   repository?: string;
@@ -13,6 +15,8 @@ export interface AssetSyncInput {
   conversationId?: string;
   conversationTitle?: string;
   chatgptProject?: string;
+  sourceFileId?: string;
+  sourceSurface?: AssetSourceSurface;
   filename?: string;
   mimeType?: string;
   sourceUrl?: string;
@@ -31,4 +35,16 @@ export interface AssetSyncResult {
   metadataPath: string;
   sha256: string;
   reason?: string;
+}
+
+export interface LibraryImportBatchResult {
+  migrationId: string;
+  processed: number;
+  synced: number;
+  duplicates: number;
+  failed: number;
+  results: Array<
+    | { sourceFileId?: string; ok: true; result: AssetSyncResult }
+    | { sourceFileId?: string; ok: false; error: string }
+  >;
 }
