@@ -51,8 +51,10 @@ export class AssetSyncService {
     });
 
     const metadata = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       source: "chatgpt",
+      sourceFileId: input.sourceFileId ?? null,
+      sourceSurface: input.sourceSurface ?? null,
       sha256,
       project,
       repository: config.repository,
@@ -80,7 +82,21 @@ export class AssetSyncService {
       repository: config.repository,
       branch: config.branch,
       path: indexPath,
-      contentBase64: Buffer.from(JSON.stringify({ sha256, assetPath, metadataPath, project }, null, 2) + "\n").toString("base64"),
+      contentBase64: Buffer.from(
+        JSON.stringify(
+          {
+            schemaVersion: 2,
+            sha256,
+            sourceFileId: input.sourceFileId ?? null,
+            sourceSurface: input.sourceSurface ?? null,
+            assetPath,
+            metadataPath,
+            project,
+          },
+          null,
+          2,
+        ) + "\n",
+      ).toString("base64"),
       message: `assets: index ${sha256.slice(0, 12)}`,
     });
 
