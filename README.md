@@ -1,41 +1,46 @@
 # ChatGPT Asset Sync
 
-把 ChatGPT 中生成的图片/资产同步到用户自定义的 GitHub 资产仓库，并按项目自动归档。
+把 ChatGPT 中生成的图片/资产同步到**用户自定义的 GitHub 资产仓库**，按项目自动归档。
 
-> 当前仓库是 v0.1 初始化版本：先建立“资产同步底座 + 首次全量迁移入口 + ChatGPT Plugin/App MCP 工具”。ChatGPT 目前没有公开全局 `image_generated` 事件，因此“任意端任意原生图片生成后 100% 无感触发”仍取决于后续 ChatGPT 宿主能力。
+> v0.2 已建立：可配置目标仓库 + 单资产实时同步 + Library 批量迁移协议 + SHA256 幂等去重。最终“手机 / Desktop / Web 任意原生图片生成后 100% 无感触发”仍取决于 ChatGPT 宿主开放生成附件事件/文件传输能力。
 
-## 目标
+## 当前状态
 
-- 首次把 ChatGPT Library 中历史生成资产全量同步到 GitHub。
-- 后续在 ChatGPT 工作流能够拿到生成资产时，立即调用 `sync_asset` 同步，而不是定时轮询。
-- 同步目标仓库完全可配置，不绑定 `openmontage-assets`。
-- 支持按项目归档、SHA256 去重、元数据记录。
-- 为 ChatGPT Plugin / Apps SDK / MCP 形态预留正式入口。
+### ✅ 已实现
+
+- 目标 GitHub 仓库可运行时修改，不绑定 `openmontage-assets`。
+- 支持 `owner/repo` 或完整 GitHub URL。
+- 自定义 branch / basePath。
+- `sync_asset`：单资产生成后立即归档。
+- `sourceFileId` / `sourceSurface` 元数据追踪。
+- `import_library_batch`：首次 Library 导入，每批最多 20 张。
+- SHA256 去重，可安全重试、断点续传。
+- 自动项目归档 + `_unclassified` 兜底。
+- sidecar metadata + `.chatgpt-asset-sync/index/<sha256>.json`。
+
+### 🟡 首次迁移进度
+
+2026-08-10 已完成用户 Library 盘点：
+
+- 图片文件总数：约 200
+- 确认 `model_generated=true`：**88 张**
+- 时间范围：2026-05-14 ～ 2026-08-10
+- 用户上传的参考图：排除，不进入自动迁移
+- 已识别项目包括 PageMind、CRM 发票、Codex Dream Skin、Wuxia Comic、Mia USA、都市爽文韩漫、表情包等
+- 迁移 inventory 已写入目标资产仓库 `.chatgpt-asset-sync/migrations/2026-08-10/inventory.json`
+
+当前剩余阻塞是 **ChatGPT 私有 Library 文件 → 第三方 MCP 服务的二进制传输**：现有 GitHub ChatGPT Connector 只支持二进制经 base64 blob 写入，不适合 88 张多 MB 原图的正式迁移。v0.2 已把这一层隔离为 Host Bridge；一旦宿主提供附件 URL/文件参数即可直接批量导入。
 
 ## 自定义目标仓库
 
-支持以下两种格式：
+支持：
 
 ```text
 983033995/openmontage-assets
 https://github.com/983033995/openmontage-assets
 ```
 
-可配置：
-
-```text
-repository  GitHub owner/repo 或完整 URL
-branch      默认 main
-basePath    默认 projects
-```
-
-运行时通过 MCP 工具修改：
-
-```text
-set_asset_repository
-```
-
-也可以通过环境变量提供默认值：
+环境变量默认值：
 
 ```bash
 ASSET_REPOSITORY=983033995/openmontage-assets
@@ -43,21 +48,11 @@ ASSET_BRANCH=main
 ASSET_BASE_PATH=projects
 ```
 
-## 资产目录约定
+运行时可通过 MCP 工具修改，无需重新部署：
 
 ```text
-<asset-repository>/
-├── projects/
-│   └── <project>/
-│       └── 2026-08-10/
-│           ├── image.png
-│           └── image.png.json
-└── .chatgpt-asset-sync/
-    └── index/
-        └── <sha256>.json
+set_asset_repository
 ```
-
-`.chatgpt-asset-sync/index/<sha256>.json` 用于无冲突去重，避免维护一个越来越大的中央 manifest。
 
 ## MCP 工具
 
@@ -67,7 +62,73 @@ ASSET_BASE_PATH=projects
 | `set_asset_repository` | 设置/切换目标仓库、分支、根目录 |
 | `resolve_project` | 解析归档项目 |
 | `sync_asset` | 同步一张资产并生成 metadata/index |
-| `import_library` | 首次 Library 全量导入入口（v0.1 contract） |
+| `import_library` | 获取首次 Library 导入契约 |
+| `import_library_batch` | 批量迁移 1–20 个 Library 资产 |
+
+## Library 全量迁移
+
+```text
+ChatGPT Library
+      ↓
+model_generated=true
+      ↓
+项目识别
+      ↓
+每批 ≤ 20
+      ↓
+import_library_batch
+      ↓
+SHA256 去重
+      ↓
+GitHub assets + metadata + index
+```
+
+每个资产建议提供：
+
+```json
+{
+  "sourceFileId": "file_xxx",
+  "sourceSurface": "library",
+  "project": "pagemind",
+  "filename": "image.png",
+  "mimeType": "image/png",
+  "generatedAt": "2026-08-10T02:07:59Z",
+  "sourceUrl": "<host-provided temporary URL>"
+}
+```
+
+如果宿主不能提供 `sourceUrl`，兼容回退为 `dataBase64`，但不建议用于大批量原图。
+
+## 目标资产结构
+
+```text
+<asset-repository>/
+├── projects/
+│   └── <project>/
+│       └── YYYY-MM-DD/
+│           ├── image.png
+│           └── image.png.json
+└── .chatgpt-asset-sync/
+    ├── index/
+    │   └── <sha256>.json
+    └── migrations/
+        └── YYYY-MM-DD/
+            └── inventory.json
+```
+
+## 项目识别优先级
+
+```text
+显式 project
+  ↓
+ChatGPT Project / Library path
+  ↓
+Conversation → Project 映射
+  ↓
+对话标题 / 高置信度内容分类
+  ↓
+_unclassified
+```
 
 ## 本地启动
 
@@ -80,7 +141,7 @@ npm run start
 MCP endpoint：
 
 ```text
-http://localhost:8787/mcp
+POST http://localhost:8787/mcp
 ```
 
 健康检查：
@@ -91,54 +152,33 @@ GET http://localhost:8787/health
 
 ## GitHub 鉴权
 
-v0.1 使用：
+开发版使用：
 
 ```bash
 GITHUB_TOKEN=...
 ```
 
-生产版本不建议把个人 PAT 当作长期方案，后续会切换为 GitHub App / OAuth，并按 ChatGPT 用户隔离目标仓库配置。
+生产版计划切换 GitHub App / OAuth，并按 ChatGPT 用户隔离目标仓库配置，不把个人 PAT 作为长期方案。
 
-## 项目识别优先级
+## Host Bridge
+
+跨 Web / Desktop / Mobile 的最终入口设计见 [docs/HOST_BRIDGE.md](docs/HOST_BRIDGE.md)。
+
+核心原则：
 
 ```text
-显式 project
-  ↓
-ChatGPT Project 名称
-  ↓
-当前对话标题
-  ↓
-_unclassified
+ChatGPT = 资产来源
+Host Adapter = 把生成附件交给同步服务
+ChatGPT Asset Sync = 分类 / 去重 / 写入
+GitHub = 永久资产库
 ```
 
-后续会增加 Conversation → Project 映射与 AI 高置信度分类。
-
-## 路线图
-
-详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+不采用浏览器 DOM 插件，也不采用定时轮询。
 
 ## 官方实现基线
 
-服务端结构参考 OpenAI 官方 `openai/openai-apps-sdk-examples` 的 Node MCP 示例，采用 Streamable HTTP + `@modelcontextprotocol/sdk`。
+MCP 服务端结构参考 OpenAI 官方 Node MCP / Apps SDK 示例，采用 Streamable HTTP + `@modelcontextprotocol/sdk`。
 
 ## License
 
 MIT
-
-## 发布这个程序仓库
-
-如果本机已经登录 GitHub CLI，可以直接：
-
-```bash
-./scripts/publish-github.sh 983033995/chatgpt-asset-sync public
-```
-
-如果希望建成私有仓库，把最后一个参数改为 `private`。
-
-## 快速切换默认资产仓库
-
-```bash
-./scripts/configure-default.sh https://github.com/983033995/openmontage-assets main projects
-```
-
-这只是默认配置；运行后仍可通过 `set_asset_repository` 动态修改，无需重新部署代码。
