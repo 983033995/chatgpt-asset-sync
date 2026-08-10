@@ -1,23 +1,26 @@
 {
   "name": "chatgpt-asset-sync",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "ChatGPT generated asset sync service with configurable GitHub destinations.",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "import:migration": "tsx scripts/import-migration.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.json",
     "check": "npm run typecheck"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "adm-zip": "^0.5.16",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "zod": "^3.24.4"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.3",
     "@types/node": "^22.15.30",
